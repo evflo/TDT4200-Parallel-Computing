@@ -1,0 +1,35 @@
+
+Timing with square root method:
+----------------
+real	0m0.342s
+user	0m0.274s
+sys	0m0.062s
+----------------
+real	0m0.346s
+user	0m0.273s
+sys	0m0.066s
+----------------
+real	0m0.338s
+user	0m0.270s
+sys	0m0.062s
+----------------
+
+Timing with square method:
+----------------
+real	0m0.330s
+user	0m0.260s
+sys	0m0.065s
+----------------
+real	0m0.329s
+user	0m0.262s
+sys	0m0.061s
+----------------
+real	0m0.319s
+user	0m0.252s
+sys	0m0.061s
+----------------
+real	0m0.330s
+user	0m0.259s
+sys	0m0.065s
+
+Very small improvents (if any) by replacing square root method with square method
