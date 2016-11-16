@@ -2,7 +2,6 @@
 #include <stdlib.h>
 #include <math.h>
 #include <cuda.h>
-#include <sys/time.h>
 
 /* Functions to be implemented: */
 float ftcs_solver_gpu ( int step, int block_size_x, int block_size_y );
@@ -82,10 +81,10 @@ float
 /* Arrays for the simulation data, on device */
 float
     *material_device,           // Material constants
-    *temperature_device[2];      // Temperature field, 2 arrays
-  //  **temperature_device;
+    *temperature_device[2],      // Temperature field, 2 arrays
+    **actual_temperature_device;
 
-texture<float,cudaTextureType2D> texreference;
+texture<float,1,cudaReadModeElementType> texreference;
 
 /* Error handling function */
 static void HandleError( cudaError_t err,
@@ -99,14 +98,8 @@ static void HandleError( cudaError_t err,
 }
 #define HANDLE_ERROR( err ) (HandleError( err, __FILE__, __LINE__ ))
 
-float timing() {
-  static struct timeval t;
-  gettimeofday(&t,NULL);
-  return (t.tv_sec + 1e-6 * t.tv_usec);
-}
 
 
-// Find global temperature array index
 __device__ int ti(int x, int y,const int* GRID_SIZE){
 
 	if ( x < 0 ){
@@ -125,63 +118,66 @@ __device__ int ti(int x, int y,const int* GRID_SIZE){
 	return ((y)*GRID_SIZE[0]+x);
 }
 
-// Find global material array index
 __device__ int mi(int x, int y,const int GRID_SIZE_X){
 	return ((y)*(GRID_SIZE_X) + x);
 }
 
-// Find local temperature index for shared memory
-__device__ int lti(int x, int y,const int* BLOCK_SIZE){
-  x++;
-  y++;
-
-
-  return ((y)*(BLOCK_SIZE[0]+2)+x);
-}
 
 /* Allocate arrays on GPU */
 void device_allocation(){
 
-  // Allocate memory for material
+	// Allocate memory
 	HANDLE_ERROR(cudaMalloc((void**) &material_device,sizeof(float) * GRID_SIZE[0] * GRID_SIZE[1]));
 
-  // Allocate memory for temperature
 	HANDLE_ERROR(cudaMalloc((void**) &temperature_device[0],sizeof(float) * GRID_SIZE[0] * GRID_SIZE[1]));
 
-  HANDLE_ERROR(cudaMalloc((void**) &temperature_device[1],sizeof(float) * GRID_SIZE[0] * GRID_SIZE[1]));
+	HANDLE_ERROR(cudaMalloc((void**) &temperature_device[1],sizeof(float) * GRID_SIZE[0] * GRID_SIZE[1]));
+
+  cudaMalloc((void**) actual_temperature_device,sizeof(float*)*2);
+
 
 }
 
 /* Transfer input to GPU */
 void transfer_to_gpu(){
 
-	// Transfer material array to GPU
+	// Transfer global memory to GPU
 	HANDLE_ERROR(cudaMemcpy(material_device,material,sizeof(float)*GRID_SIZE[0]*GRID_SIZE[1],cudaMemcpyHostToDevice));
 
-  // Transfer temperature array to GPU
-  HANDLE_ERROR(cudaMemcpy(temperature_device[0],temperature,sizeof(float)*GRID_SIZE[0]*GRID_SIZE[1],cudaMemcpyHostToDevice));
-  HANDLE_ERROR(cudaMemcpy(temperature_device[1],temperature,sizeof(float)*GRID_SIZE[0]*GRID_SIZE[1],cudaMemcpyHostToDevice));
+
+
+	HANDLE_ERROR(cudaMemcpy(temperature_device[0],temperature,sizeof(float)*GRID_SIZE[0]*GRID_SIZE[1],cudaMemcpyHostToDevice));
+
+	HANDLE_ERROR(cudaMemcpy(temperature_device[1],temperature,sizeof(float)*GRID_SIZE[0]*GRID_SIZE[1],cudaMemcpyHostToDevice));
+
+  cudaMemcpy(actual_temperature_device,temperature_device,sizeof(float*)*2,cudaMemcpyHostToDevice);
 }
 
 /* Transfer output from GPU to CPU */
 void transfer_from_gpu(int step){
-
   // Copy temperature from GPU -> CPU
   HANDLE_ERROR(cudaMemcpy(temperature,temperature_device[step%2],sizeof(float)*GRID_SIZE[0]*GRID_SIZE[1],cudaMemcpyDeviceToHost));
 
+	// Copy temperature from GPU -> CPU
+//	HANDLE_ERROR(cudaMemcpy(material,material_device,sizeof(float)*GRID_SIZE[0]*GRID_SIZE[1],cudaMemcpyDeviceToHost));
+
+	// Free device material
+//	HANDLE_ERROR(cudaFree(material_device));
+
+	// Free device temperature
+//	HANDLE_ERROR(cudaFree(temperature_device[0]));
+//	HANDLE_ERROR(cudaFree(temperature_device[1]));
 }
 
 // Plain/global memory only kernel
-__global__ void  ftcs_kernel(float* out, float* in, float* material_device, int step, int block_size_x,int block_size_y,int GRID_X,int GRID_Y ){
+__global__ void  ftcs_kernel(float** temperature_device, float* material_device, int step, int block_size_x,int block_size_y,const int* GRID_SIZE ){
 
-  // Set grid size
-  const int GRID_SIZE[2] = {GRID_X, GRID_Y};
-
-  // Find matrix index
 	int x = blockIdx.x * block_size_x + threadIdx.x;
 	int y = blockIdx.y * block_size_y + threadIdx.y;
 
-  // Compute ftcs for thread
+	float* in = temperature_device[step%2];
+	float* out = temperature_device[(step+1)%2];
+
 	out[ti(x,y,GRID_SIZE)] = in[ti(x,y,GRID_SIZE)] + material_device[mi(x,y,GRID_SIZE[0])]*
 					(in[ti(x+1,y,GRID_SIZE)] +
 					in[ti(x-1,y,GRID_SIZE)] +
@@ -192,124 +188,72 @@ __global__ void  ftcs_kernel(float* out, float* in, float* material_device, int 
 }
 
 /* Shared memory kernel */
-__global__ void  ftcs_kernel_shared(float*  out,float* in, float* material_device, int step, int block_size_x , int block_size_y, int GRID_X,int GRID_Y ){
+__global__ void  ftcs_kernel_shared(float** temperature_device, float* material_device, int step, int block_size_x , int block_size_y, const int* GRID_SIZE ){
 
-  // Compute grid size globally and locally
-  const int GRID_SIZE[2] = {GRID_X, GRID_Y};
-  const int BLOCK_SIZE[2] = {block_size_x,block_size_y};
+	extern __shared__ float in[];
 
-  // Initialize shared memory
-	extern __shared__ float in_shared[];
-
-  // Find matrix index
 	int x = blockIdx.x * block_size_x + threadIdx.x;
 	int y = blockIdx.y * block_size_y + threadIdx.y;
 
-  // Find block matrix index
-  int local_x = threadIdx.x;
-  int local_y = threadIdx.y;
+	float* out = temperature_device[(step+1)%2];
 
-  // Set halo around border in shared memory
-  if( local_x == 0 ){
-    in_shared[lti(local_x - 1,local_y,BLOCK_SIZE)] = in[ti(x - 1,y,GRID_SIZE)];
-  }
+	// Set data in shared memory
+	in[ti(x,y,GRID_SIZE)] = temperature_device[(step)%2][ti(x,y,GRID_SIZE)];
+	in[ti(x+1,y,GRID_SIZE)] = temperature_device[(step)%2][ti(x+1,y,GRID_SIZE)];
+	in[ti(x-1,y,GRID_SIZE)] = temperature_device[(step)%2][ti(x-1,y,GRID_SIZE)];
+	in[ti(x,y+1,GRID_SIZE)] = temperature_device[(step)%2][ti(x,y+1,GRID_SIZE)];
+	in[ti(x,y-1,GRID_SIZE)] = temperature_device[(step)%2][ti(x,y-1,GRID_SIZE)];
 
-  if( local_x == ( block_size_x - 1 ) ){
-    in_shared[lti(local_x + 1,local_y,BLOCK_SIZE)] = in[ti(x + 1,y,GRID_SIZE)];
-  }
-
-  if( local_y == 0 ){
-    in_shared[lti(local_x,local_y-1,BLOCK_SIZE)] = in[ti(x,y - 1,GRID_SIZE)];
-  }
-
-  if ( local_y == ( block_size_y - 1 ) ) {
-    in_shared[lti(local_x,local_y+1,BLOCK_SIZE)] = in[ti(x,y + 1,GRID_SIZE)];
-  }
-
-  // Set data in shared memory
-  in_shared[lti(local_x,local_y,BLOCK_SIZE)] = in[ti(x,y,GRID_SIZE)];
-
-  // Synch threads before reading
 	__syncthreads();
 
-  // Compute ftcs using shared memory
-	out[ti(x,y,GRID_SIZE)] = in_shared[lti(local_x,local_y,BLOCK_SIZE)] + material_device[mi(x,y,GRID_SIZE[0])]*
-					(in_shared[lti(local_x+1,local_y,BLOCK_SIZE)] +
-					in_shared[lti(local_x-1,local_y,BLOCK_SIZE)] +
-					in_shared[lti(local_x,local_y+1,BLOCK_SIZE)] +
-					in_shared[lti(local_x,local_y-1,BLOCK_SIZE)] -
-					4*in_shared[lti(local_x,local_y,BLOCK_SIZE)]);
+	out[ti(x,y,GRID_SIZE)] = in[ti(x,y,GRID_SIZE)] + material_device[mi(x,y,GRID_SIZE[0])]*
+					(in[ti(x+1,y,GRID_SIZE)] +
+					in[ti(x-1,y,GRID_SIZE)] +
+					in[ti(x,y+1,GRID_SIZE)] +
+					in[ti(x,y-1,GRID_SIZE)] -
+					4*in[ti(x,y,GRID_SIZE)]);
 
 }
 
 /* Texture memory kernel */
-__global__ void  ftcs_kernel_texture(float* out, float* material_device,int step, int block_size_x, int block_size_y,int GRID_X,int GRID_Y ,size_t offset){
-
-  // Set grid size
-  const int GRID_SIZE[2] = {GRID_X, GRID_Y};
+__global__ void  ftcs_kernel_texture(float** temperature_device, float* material_device,int step, int block_size_x, int block_size_y,const int* GRID_SIZE ){
 
 	// Find linear index for x and y coordinates
 	int x = blockIdx.x * block_size_x + threadIdx.x;
 	int y = blockIdx.y * block_size_y + threadIdx.y;
 
-  // Find indices of neighbouring elements
-  int x_up = x+1;
-  int x_down = x-1;
-  int y_up = y+1;
-  int y_down = y-1;
-
-  // Edit border values to fit with Neuman boundary condition
-  if( x_up >= GRID_SIZE[0] ){
-    x_up--;
-  }
-  if( x_down < 0 ){
-    x_down++;
-  }
-  if( y_up >= GRID_SIZE[1] ){
-    y_up--;
-  }
-  if( y_down < 0 ){
-    y_down++;
-  }
-
-
-  offset /= sizeof(float);
-  size_t xOffset = offset % GRID_SIZE[0];
-  size_t yOffset = offset / GRID_SIZE[1];
+	float* out = temperature_device[(step+1)%2];
 
 	// Fetch data from texture memory
-	float in_origin = tex2D(texreference,xOffset + x,yOffset + y);
-	float in_up_x = tex2D(texreference,xOffset +x_up,yOffset + y);
-	float in_down_x = tex2D(texreference,xOffset +x_down,yOffset + y);
-	float in_up_y = tex2D(texreference,xOffset +x,yOffset + y_up);
-	float in_down_y = tex2D(texreference,xOffset +x,yOffset + y_down);
+	float in_origin = tex1Dfetch(texreference,ti(x,y,GRID_SIZE));
+	float in_up_x = tex1Dfetch(texreference,ti(x+1,y,GRID_SIZE));
+	float in_down_x = tex1Dfetch(texreference,ti(x-1,y,GRID_SIZE));
+	float in_up_y = tex1Dfetch(texreference,ti(x,y+1,GRID_SIZE));
+	float in_down_y = tex1Dfetch(texreference,ti(x,y-1,GRID_SIZE));
 
-  // Compute ftcs using texture memory
 	out[ti(x,y,GRID_SIZE)] = in_origin + material_device[mi(x,y,GRID_SIZE[0])]*
 									(in_up_x +
 									in_down_x +
 									in_up_y +
 									in_down_y -
 									4*in_origin);
+
+
 }
 
 
 /* External heat kernel, should do the same work as the external
  * heat function in the serial code
  */
-__global__ void external_heat_kernel(float* in, int step, int block_size_x, int block_size_y,int GRID_X, int GRID_Y ){
-
-  // Set grid size
-  const int GRID_SIZE[2] = {GRID_X, GRID_Y};
+__global__ void external_heat_kernel(float** temperature_device, int step, int block_size_x, int block_size_y,const int* GRID_SIZE ){
 
 	// Find linear index for x and y coordinates
   int x = blockIdx.x * block_size_x + threadIdx.x;
   int y = blockIdx.y * block_size_y + threadIdx.y;
 
-  // Set value of external heat in array
   if(x>= (GRID_SIZE[0]/4) && x<= (3*GRID_SIZE[0]/4) ){
 	   if(y >= (GRID_SIZE[1]/2 - GRID_SIZE[1]/16) && y<= (GRID_SIZE[1]/2 + GRID_SIZE[1]/16)){
-	      in[ti(x,y,GRID_SIZE)] = 100;
+	      temperature_device[step%2][ti(x,y,GRID_SIZE)] = 100;
 	}
 }
 }
@@ -320,47 +264,18 @@ __global__ void external_heat_kernel(float* in, int step, int block_size_x, int 
 
 float ftcs_solver_gpu( int step, int block_size_x, int block_size_y ){
 
-  // Edit block sizes to be even numbers
-  if ( block_size_x % 2){
-    block_size_x++;
-  }
-  if (block_size_y % 2) {
-    block_size_y++;
-  }
-
-  // Initalize timing
-  cudaEvent_t start,stop;
-  cudaEventCreate(&start);
-  cudaEventCreate(&stop);
-
 	// Compute thread block size
 	dim3 gridBlock(GRID_SIZE[0]/block_size_x,GRID_SIZE[1]/block_size_y);
 	dim3 threadBlock(block_size_x,block_size_y);
 
-  // Find device temperature arrays
-  float* out = temperature_device[(step+1)%2];
-  float* in = temperature_device[step%2];
-
-  // Record execution time
-  cudaEventRecord(start);
 
   // Compute global kernel
-  ftcs_kernel<<<gridBlock,threadBlock>>>(out,in,material_device,step,block_size_x,block_size_y,GRID_SIZE[0],GRID_SIZE[1]);
-
-  cudaEventRecord(stop);
-
-  // Synch device threads
+  ftcs_kernel<<<gridBlock,threadBlock>>>(actual_temperature_device,material_device,step,block_size_x,block_size_y,GRID_SIZE);
+  //ftcs_kernel<<<dim3(1,1),dim3(1,1)>>>(temperature_device,material_device,step,block_size_x,block_size_y,GRID_SIZE);
   HANDLE_ERROR( cudaDeviceSynchronize() );
   HANDLE_ERROR( cudaPeekAtLastError() );
-
-  // Stop recording
-  cudaEventSynchronize(stop);
-  float milliseconds = 0;
-
-  // Compute timing
-  cudaEventElapsedTime(&milliseconds,start,stop);
-
-  return milliseconds;
+    float time = -1.0;
+    return time;
 }
 
 /* Set up and call ftcs_kernel_shared
@@ -368,49 +283,21 @@ float ftcs_solver_gpu( int step, int block_size_x, int block_size_y ){
  */
 float ftcs_solver_gpu_shared( int step, int block_size_x, int block_size_y ){
 
-  // Edit block sizes to be even numbers
-  if ( block_size_x % 2){
-    block_size_x++;
-  }
-  if (block_size_y % 2) {
-    block_size_y++;
-  }
-
-  // Initalize timing
-  cudaEvent_t start,stop;
-  cudaEventCreate(&start);
-  cudaEventCreate(&stop);
-
 	// Compute thread block size
-	dim3 gridBlock(GRID_SIZE[0]/block_size_x,GRID_SIZE[1]/block_size_y);
+	dim3 gridBlock(GRID_SIZE[0]/block_size_x,GRID_SIZE[1]);
 	dim3 threadBlock(block_size_x,block_size_y);
 
 	// Compute size of shared memory
-	int shared_memory_size = (block_size_x+2) * (block_size_y+2) * sizeof(float);
-
-  // Find device temperature arrays
-  float* out = temperature_device[(step+1)%2];
-  float* in = temperature_device[step%2];
-
-  // Start recording
-  cudaEventRecord(start);
+	int shared_memory_size = GRID_SIZE[0] * GRID_SIZE[1] * sizeof(float);
 
 	// Compute shared kernel
-	ftcs_kernel_shared<<<gridBlock,threadBlock,shared_memory_size>>>(out,in,material_device,step,block_size_x,block_size_y,GRID_SIZE[0],GRID_SIZE[1]);
-  cudaEventRecord(stop);
-
-  // Synch device threads
-  HANDLE_ERROR( cudaDeviceSynchronize() );
+	ftcs_kernel_shared<<<gridBlock,threadBlock,shared_memory_size>>>(temperature_device,material_device,step,block_size_x,block_size_y,GRID_SIZE);
   HANDLE_ERROR( cudaPeekAtLastError() );
 
-  // Stop timing recording
-  cudaEventSynchronize(stop);
-  float milliseconds = 0;
+    float time = -1.0;
+    return time;
 
-  // Compute timing
-  cudaEventElapsedTime(&milliseconds,start,stop);
 
-  return milliseconds;
 }
 
 /* Set up and call ftcs_kernel_texture
@@ -418,58 +305,24 @@ float ftcs_solver_gpu_shared( int step, int block_size_x, int block_size_y ){
  */
 float ftcs_solver_gpu_texture( int step, int block_size_x, int block_size_y ){
 
-  // Edit block sizes to be even numbers
-  if ( block_size_x % 2){
-    block_size_x++;
-  }
-  if (block_size_y % 2) {
-    block_size_y++;
-  }
-
-  // Initalize timing
-  cudaEvent_t start,stop;
-  cudaEventCreate(&start);
-  cudaEventCreate(&stop);
-
 	// Compute thread block size
   dim3 gridBlock(GRID_SIZE[0]/block_size_x,GRID_SIZE[1]/block_size_y);
 	dim3 threadBlock(block_size_x,block_size_y);
 
-  // Find device memory
-  float* out = temperature_device[(step+1)%2];
-  float* in = temperature_device[step%2];
-
-  // Create channel for texture memory
-  cudaChannelFormatDesc desc = cudaCreateChannelDesc<float>();
-
-  size_t offset;
-  //bind texture reference with linear memory
-  HANDLE_ERROR(cudaBindTexture2D(&offset,texreference,
-    in,desc,GRID_SIZE[1],GRID_SIZE[0],sizeof(float)*GRID_SIZE[0]));
-
-  // Start recording
-  cudaEventRecord(start);
+	//bind texture reference with linear memory
+	cudaBindTexture(0,texreference,temperature_device[(step%2)],sizeof(float)*GRID_SIZE[0]*GRID_SIZE[1]);
 
 	// Compute texture kernel
-	ftcs_kernel_texture<<<gridBlock,threadBlock>>>(out,material_device,step,block_size_x,block_size_y,GRID_SIZE[0],GRID_SIZE[1],offset);
-
-  cudaEventRecord(stop);
-
-  // Synch threads
-  HANDLE_ERROR( cudaDeviceSynchronize() );
+	ftcs_kernel_texture<<<gridBlock,threadBlock>>>(actual_temperature_device,material_device,step,block_size_x,block_size_y,GRID_SIZE);
   HANDLE_ERROR( cudaPeekAtLastError() );
 
-  // Stop recording
-  cudaEventSynchronize(stop);
-
 	//Unbind texture reference
-	HANDLE_ERROR(cudaUnbindTexture(texreference));
+	cudaUnbindTexture(texreference);
 
-  // Compute timing
-  float milliseconds = 0;
-  cudaEventElapsedTime(&milliseconds,start,stop);
+    float time = -1.0;
+    return time;
 
-  return milliseconds;
+
 }
 
 
@@ -480,13 +333,8 @@ void external_heat_gpu( int step, int block_size_x, int block_size_y ){
 	dim3 gridBlock(GRID_SIZE[0]/block_size_x,GRID_SIZE[1]/block_size_y);
 	dim3 threadBlock(block_size_x,block_size_y);
 
-  // Find device temperature array
-  float* in = temperature_device[step%2];
-
   // Compute external heat kernel
-	external_heat_kernel<<<gridBlock,threadBlock>>>(in,step, block_size_x, block_size_y,GRID_SIZE[0],GRID_SIZE[1]);
-
-  // Synch threads
+	external_heat_kernel<<<gridBlock,threadBlock>>>(actual_temperature_device,step, block_size_x, block_size_y,GRID_SIZE);
   HANDLE_ERROR( cudaDeviceSynchronize() );
   HANDLE_ERROR( cudaPeekAtLastError() );
 }
