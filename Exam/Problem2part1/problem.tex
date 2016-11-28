@@ -1,0 +1,49 @@
+\documentclass[12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{natbib}
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{amsmath}
+
+\newcommand\abs[1]{\left|#1\right|}
+
+
+% Purpose: Recap of first ex. TDT 4200
+%
+% Made by:
+%	Even Florenes M.Sc Electronics NTNU 2016
+%
+% Last changes:
+% 	2016-10-28 EF: Writing header and beginning to write document
+%
+% All rigths reserved Even Flørenæs NTNU 2016
+%
+
+\begin{document}
+
+\thispagestyle{empty}
+\mbox{}\\[6pc]
+\begin{center}
+\Huge{Problem 2 part 1}\\[2pc]
+
+\Large{Even Flørenæs}\\[1pc]
+\Large{Fall 2016}\\[2pc]
+
+TDT4200 Parallel Computing\\
+Department of Computer Science
+\end{center}
+\vfill
+
+\newpage
+\tableofcontents
+\newpage
+\section{Theory}
+\subsection{Threads and processes}
+A process is an executing instance of a program which can contain multiple threads. Threads are generally smaller processes in complexity than processes. A thread has shared memory while a process has a private memory blocks.
+\subsection{Race condition}
+When threads or processors attempt to simultaneously  access a resource, and the accesses can result in an error, the threads have a race condition. A race condition will leave the computation output depend on which thread "wins the race".
+\subsection{Critical section}
+A block of code that can only be executed by one thread at a time, to avoid a race condition, is called a critical section.
+\end{document}

@@ -1,0 +1,59 @@
+\documentclass[12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{natbib}
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{amsmath}
+
+\newcommand\abs[1]{\left|#1\right|}
+
+
+% Purpose: Recap of first ex. TDT 4200
+%
+% Made by:
+%	Even Florenes M.Sc Electronics NTNU 2016
+%
+% Last changes:
+% 	2016-10-28 EF: Writing header and beginning to write document
+%
+% All rigths reserved Even Flørenæs NTNU 2016
+%
+
+\begin{document}
+
+\thispagestyle{empty}
+\mbox{}\\[6pc]
+\begin{center}
+\Huge{Problem 1}\\[2pc]
+
+\Large{Even Flørenæs}\\[1pc]
+\Large{Fall 2016}\\[2pc]
+
+TDT4200 Parallel Computing\\
+Department of Computer Science
+\end{center}
+\vfill
+
+\newpage
+\tableofcontents
+\newpage
+\section{Theory}
+In Flynn's taxonomy there are six classified computer architecture. SISD( Single Instruction Single Data), SIMD (Single Instruction Multiple Data), MIMD (Multiple Instruction Multiple Data), MISD (Multiple Instruction Single Data) , SPMD (Single Program Multiple Data) , MPMD ( Multiple Program Multiple Data).
+\\[10pt]
+A program $\textbf{doStuff()}$ performs 1000 iterations. The first 250 iterations are inherently serial, but you are able to fully parallelize the work done in the last 750 iterations. Describe the possible speedup in terms of $T_{parallel}$ and $T_{serial}$ and p, according to Amdahl's law.
+\begin{equation}\label{eq:S1}
+S = \frac{T_{s}}{T_{p}}
+\end{equation}
+The parallelized implementation manage to parallelize 75 \% of the iterations:
+\begin{equation} \label{eq:Tp}
+T_p = 0.25T_s + 0.75 \frac{T_s}{p}
+\end{equation}
+Using \ref{eq:Tp} in \ref{eq:S1}:
+\begin{equation}
+S = \frac{1}{0.25 + \frac{0.75}{p}}
+\end{equation}
+
+
+\end{document}

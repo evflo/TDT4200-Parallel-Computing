@@ -1,0 +1,4 @@
+\contentsline {section}{\numberline {1}Theory}{3}
+\contentsline {subsection}{\numberline {1.1}Threads and processes}{3}
+\contentsline {subsection}{\numberline {1.2}Race condition}{3}
+\contentsline {subsection}{\numberline {1.3}Critical section}{3}

@@ -1,0 +1,61 @@
+\documentclass[12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{natbib}
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{amsmath}
+
+\newcommand\abs[1]{\left|#1\right|}
+
+
+% Purpose: Recap of first ex. TDT 4200
+%
+% Made by:
+%	Even Florenes M.Sc Electronics NTNU 2016
+%
+% Last changes:
+% 	2016-10-28 EF: Writing header and beginning to write document
+%
+% All rigths reserved Even Flørenæs NTNU 2016
+%
+
+\begin{document}
+
+\thispagestyle{empty}
+\mbox{}\\[6pc]
+\begin{center}
+\Huge{Problem 7}\\[2pc]
+
+\Large{Even Flørenæs}\\[1pc]
+\Large{Fall 2016}\\[2pc]
+
+TDT4200 Parallel Computing\\
+Department of Computer Science
+\end{center}
+\vfill
+
+\newpage
+\tableofcontents
+\newpage
+\section{Theory}
+\subsection{Key differences between CUDA and OpenCL}
+Programming in CUDA is restricted to building application for NVIDIAs GPUs. OpenCL can be used to program any heterogenous platform e.g GPUs or FPGAs. OpenCL is much more verbose than CUDA.
+\subsubsection{Naming differences}
+
+\begin{center}
+\begin{tabular}{| l | l |}
+	\hline
+	\textbf{CUDA} & \textbf{OpenCL} \\ \hline
+	Thread block & Work-group \\ \hline
+	Thread & Work item \\ \hline
+	Shared memory & Local memory \\ \hline
+	Local memory &  Private memory\\ \hline
+	Multiprocessor & Compute unit \\ \hline
+\end{tabular}
+\end{center}
+It isn't defined in the OpenCL standard. A warp is a thread as executed by the hardware (CUDA threads are not really threads and map onto a warp as separate SIMD elements with some clever hardware/software mapping). It is a collection of work-items and there can be multiple warps in a work-group.
+\\[10pt]
+An OpenCL subgroup was designed to be compatible with a hardware thread, and hence is able to represent a warp in the OpenCL kernel, but it is entirely up to NVIDIA to decide to implement subgroups or not and of course an OpenCL subgroup cannot expose every feature that NVIDIA can expose for warps because it is a standard, while NVIDIA can do anything they like on their own devices.
+\end{document}

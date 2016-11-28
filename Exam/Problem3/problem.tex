@@ -1,0 +1,55 @@
+\documentclass[12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{natbib}
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{amsmath}
+
+\newcommand\abs[1]{\left|#1\right|}
+
+
+% Purpose: Recap of first ex. TDT 4200
+%
+% Made by:
+%	Even Florenes M.Sc Electronics NTNU 2016
+%
+% Last changes:
+% 	2016-10-28 EF: Writing header and beginning to write document
+%
+% All rigths reserved Even Flørenæs NTNU 2016
+%
+
+\begin{document}
+
+\thispagestyle{empty}
+\mbox{}\\[6pc]
+\begin{center}
+\Huge{Problem 3}\\[2pc]
+
+\Large{Even Flørenæs}\\[1pc]
+\Large{Fall 2016}\\[2pc]
+
+TDT4200 Parallel Computing\\
+Department of Computer Science
+\end{center}
+\vfill
+
+\newpage
+\tableofcontents
+\newpage
+\section{Theory}
+\subsection{Cache memory}
+Fast memory which is closer to processor than the main memory. The purpose of cache memory is to store program instructions that are frequently referenced by software during operation. Fast access to these instructions increases the overall speed of the software program.
+\subsection{Spatial and temporal locality}
+Temporal locality refers to accessing a memory location defined somewhere in time. Spatial locality refers to accessing a memory location defined somewhere in the spatial domain.
+\\[10pt]
+Cache memories consider the spatial locality of memory accessing because if a particular memory location is referenced at one point, then it is likely that neighboring and generally nearby memory locations will be referenced in the near future.
+\subsection{Cache coherence}
+Cache coherence refers to the consistency of shared resource data that ends up stored in multiple local caches. In a multiprocessing system problems with inconsistent data may arise.
+\subsection{False sharing}
+False sharing is an action which may arise in a multithread system. If multiple threads with separate caches accesses different variables that belong to the same cache line, updates performed by one of these threads may force the other threads to copy from main memory even if no changes have happened to the data belonging to that particular thread. This action is performance-degrading, but ensures cache coherence.
+\subsection{OpenMP and Pthreads}
+Pthreads requires that the programmer explicitly specify the behavior of each thread. OpenMP, on the other hand, sometimes allows the programmer to simply state that a block of code should be executed in parallel, and the precise determination of the tasks and which threads should execute them is left to the compiler and the run-time system. Pthread can be used with any C compiler, provided the system has a Pthreads library. OpenMP require compiler support for some operations. Pthreads is developed for usage at lower level programming, but OpenMP is developed to be used at higher level programming.
+\end{document}
